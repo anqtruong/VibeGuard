@@ -11,7 +11,7 @@ VibeGuard uses transparent, rule-based analysis to highlight actionable findings
 
 Interest in building real projects with real-world impact has been higher than ever, and with the rise of AI and vibecoding, the barrier to entry is lower than ever.
 
-Five months ago, a student accidentally pushed his Google Cloud API key to GitHub. He thought it was private, but by the time he realized, it was too late. He received a bill for over $55,000. 
+Five months ago, a student accidentally pushed his Google Cloud API key to GitHub. He thought it was private, but by the time he realized, it was too late. He received a bill for over $55,000. His mistake was just one of many individuals who've had such a mishap.
 
 Vibecoding doesn't just include people who know how to code, it's also people who've never printed a "Hello World!" in their lives. With that in mind, you'd never expect them to know how to secure the code they generate either. 
 
