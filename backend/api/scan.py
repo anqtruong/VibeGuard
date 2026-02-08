@@ -1,25 +1,42 @@
 #endpoint
 
 from fastapi import APIRouter, HTTPException
-from models.contracts import Finding, GitHubScanRequest, ScanResponse, InputRepository
+from models.contracts import Finding, GitHubScanRequest, ScanResponse, InputRepository, Stats
 from urllib.parse import urlparse
+
+from scanner.ingest import ingest_repo, NotFoundError, DownloadTimeout, TooLargeError, IngestError
 
 class InvalidGitHubRepoUrl(ValueError):
     pass
 
 scan_router = APIRouter()
+
 @scan_router.post("/github", response_model=ScanResponse)
-def scan_GitHub(request: GitHubScanRequest):
-
-    repo_url = request.repo_url
-
+async def scan_GitHub(request: GitHubScanRequest):
+    # validate and parse repo URL into structured InputRepository
     try:
-        normalize_Url(repo_url)
+        repo_meta = normalize_Url(request.repo_url)
     except InvalidGitHubRepoUrl as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return { "findings": []}
+    # call ingestion to fetch files (anonymous download)
+    try:
+        payload, stats = await ingest_repo(repo_meta.owner, repo_meta.name, ref=repo_meta.ref, subpath=repo_meta.subpath, timeout=30)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DownloadTimeout as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except TooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    except IngestError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
+    # return minimal ScanResponse with empty findings (scanner stub)
+    return ScanResponse(ok=True, repo=repo_meta, stats=stats, findings=[])
+
+# minimal URL normalizer that returns structured InputRepository
 def normalize_Url(repo_url: str) -> InputRepository:
     # basic validation
     if not repo_url or not repo_url.strip():
@@ -64,7 +81,6 @@ def normalize_Url(repo_url: str) -> InputRepository:
             if len(parts) > 4:
                 subpath = "/".join(parts[4:])
         else:
-            # disallow other repo subpaths (issues, pulls, etc.)
             raise InvalidGitHubRepoUrl("URL must be a GitHub repository root or tree URL")
 
     return InputRepository(owner=owner, name=name, ref=ref, subpath=subpath)
