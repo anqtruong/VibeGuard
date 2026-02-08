@@ -38,11 +38,10 @@ IGNORED_DIRS = {
 }
 
 scan_router = APIRouter()
+
 @scan_router.post("/github", response_model=ScanResponse)
-def scan_GitHub(request: GitHubScanRequest):
-
-    repo_url = request.repo_url
-
+async def scan_GitHub(request: GitHubScanRequest):
+    # validate and parse repo URL into structured InputRepository
     try:
         normalized_url = normalize_Url(repo_url)
     except InvalidGitHubRepoUrl as e:
@@ -65,29 +64,44 @@ def normalize_Url(repo_url: str) -> str:
 
     url = repo_url.strip()
 
-    if not url.startswith(("https://")): #if url doesn't start with https://, add it
+    if not url.startswith(("https://")):
         url = "https://" + url
 
     parsed = urlparse(url)
 
-    if parsed.netloc != "github.com":#github repo input only
+    if parsed.netloc != "github.com":
         raise InvalidGitHubRepoUrl("Only github.com repo URLs are supported")
 
-    if parsed.query or parsed.fragment: # Reject query strings or fragments
+    if parsed.query or parsed.fragment:
         raise InvalidGitHubRepoUrl("Invalid GitHub repo URL")
 
-    path = parsed.path.rstrip("/") #Normalize path
+    path = parsed.path.rstrip("/")
     if path.endswith(".git"):
         path = path[:-4]
+
     parts = path.lstrip("/").split("/")
 
-    # Must be exactly /owner/repo
-    if len(parts) != 2:
-        raise InvalidGitHubRepoUrl("URL must be a GitHub repository root (https://github.com/owner/repo)")
-    owner, repo = parts
+    # require at least /owner/repo
+    if len(parts) < 2:
+        raise InvalidGitHubRepoUrl("URL must be a GitHub repository (https://github.com/owner/repo)")
 
-    if not owner or not repo:
-        raise InvalidGitHubRepoUrl("Invalid GitHub repo URL")
+    owner = parts[0]
+    name = parts[1]
+
+    # default ref
+    ref = "main"
+    subpath = None
+
+    # support /owner/repo/tree/{ref}/optional/subpath
+    if len(parts) >= 3:
+        if parts[2] == "tree":
+            if len(parts) < 4:
+                raise InvalidGitHubRepoUrl("Invalid repository URL; missing branch after /tree/")
+            ref = parts[3] or "main"
+            if len(parts) > 4:
+                subpath = "/".join(parts[4:])
+        else:
+            raise InvalidGitHubRepoUrl("URL must be a GitHub repository root or tree URL")
 
     return f"https://github.com/{owner}/{repo}"
 
