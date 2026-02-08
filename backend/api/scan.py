@@ -4,8 +4,10 @@ from fastapi import APIRouter, HTTPException
 from models.contracts import Finding, GitHubScanRequest, ScanResponse
 from urllib.parse import urlparse
 
-scan_router = APIRouter()
+class InvalidGitHubRepoUrl(ValueError):
+    pass
 
+scan_router = APIRouter()
 @scan_router.post("/github", response_model=ScanResponse)
 def scan_GitHub(request: GitHubScanRequest):
 
@@ -17,8 +19,6 @@ def scan_GitHub(request: GitHubScanRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     return { "findings": []}
-class InvalidGitHubRepoUrl(ValueError):
-    pass
 
 def normalize_Url(repo_url: str) -> str:
     

@@ -12,3 +12,12 @@ class Finding(BaseModel): #This is the findings of the scanner. Which rule a pot
 class ScanResponse(BaseModel): #Return list of findings
     findings: List[Finding]
 
+class InputRepository(BaseModel):
+    owner: str
+    name: str
+    ref: Optional[str] = "main"     # branch/ref to scan (default "main")
+    subpath: Optional[str] = None   # optional sub-directory within the repo
+
+class SourceFile(BaseModel):
+    path: str      # repository path (relative)
+    content: str   # full file content (text)
