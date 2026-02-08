@@ -7,54 +7,193 @@
 </head>
 
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <img src="/VibesGuard_Logo.png" alt="VibeGuard Logo">
-      <div>
-        <h1>VibeGuard</h1>
-        <p>Guarding your automated code against vulnerabilities</p>
+  <div class="page">
+    <header class="site-header">
+      <div class="brand">
+        <img src="/VibesGuard_Logo.png" alt="VibeGuard Logo">
+        <div>
+          <h1>VibeGuard</h1>
+          <p>Public repo security scanner</p>
+        </div>
       </div>
-    </div>
-  </header>
+      <div class="header-pills">
+        <span class="pill">Public GitHub only</span>
+        <span class="pill">Fast static scan</span>
+      </div>
+    </header>
 
-  <main class="container">
-    <section class="card scan-card">
-      <form id="scan-form" class="scan-form">
-        <label for="flink" class="small-muted" style="text-align:center; display:block; margin-bottom:6px;">Enter GitHub repository URL</label>
-        <div class="input-row">
-          <input type="url" id="flink" name="flink" placeholder="https://github.com/owner/repo" required />
+    <main class="grid">
+      <section class="panel">
+        <div class="panel-header">
+          <p class="eyebrow">Quick Scan</p>
+          <h2 class="panel-title">Scan your repo in seconds</h2>
+          <p class="panel-subtitle">
+            Paste a GitHub repository URL. VibeGuard will fetch the code and
+            flag potentially suspicious patterns.
+          </p>
         </div>
-        <div style="display:flex;justify-content:center;margin-top:12px;">
-          <button id="scan-btn" class="button-primary" type="submit">Scan</button>
-        </div>
-        <div class="small-muted" style="text-align:center;margin-top:10px;">Public GitHub repos only — no auth required for demo</div>
-      </form>
-    </section>
+        <form id="scan-form" class="scan-form">
+          <label for="flink" class="small-muted">GitHub repository URL</label>
+          <div class="input-row">
+            <input type="url" id="flink" name="flink" placeholder="https://github.com/owner/repo" required />
+            <button id="scan-btn" class="button-primary" type="submit">Scan</button>
+          </div>
+          <div class="small-muted">Only public GitHub repositories are accepted</div>
+        </form>
 
-    <aside class="card results-card">
-      <h2 style="text-align:center;">Flagged Messages</h2>
-      <pre id="show-errors"></pre>
-      <div class="footer-note" style="text-align:center;">Results are redacted and filtered for high-confidence matches.</div>
-    </aside>
-  </main>
+        <div class="info-grid">
+          <div class="info-card">
+            <h3>Supported Languages</h3>
+            <div class="tag-list">
+              <span class="tag">JavaScript</span>
+              <span class="tag">TypeScript</span>
+              <span class="tag">Python</span>
+              <span class="tag">Java</span>
+            </div>
+          </div>
+          <div class="info-card">
+            <h3>What We Check</h3>
+            <ul class="info-list">
+              <li>Hardcoded secrets and API keys</li>
+              <li>Private key material</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel results-card">
+        <div class="panel-header">
+          <p class="eyebrow">Results</p>
+          <h2 class="panel-title">Findings</h2>
+        </div>
+        <div class="summary" id="summary">
+          <div class="summary-item"><strong id="count-total">0</strong> Total</div>
+          <div class="summary-item"><strong id="count-high">0</strong> High</div>
+          <div class="summary-item"><strong id="count-medium">0</strong> Medium</div>
+          <div class="summary-item"><strong id="count-low">0</strong> Low</div>
+        </div>
+        <div class="results-area">
+          <div id="error-state" class="error-state" style="display:none;"></div>
+          <div id="empty-state" class="empty-state">Try entering a GitHub repository above!</div>
+          <ul id="findings-list" class="findings"></ul>
+        </div>
+        <div class="footer-note">Results are redacted and filtered for your privacy.</div>
+      </aside>
+    </main>
+  </div>
 
   <script>
-    // Minimal client-side tester to POST to the Next.js proxy route
     (function(){
       const form = document.getElementById('scan-form');
       const input = document.getElementById('flink');
-      const out = document.getElementById('show-errors');
+      const emptyState = document.getElementById('empty-state');
+      const errorState = document.getElementById('error-state');
+      const findingsList = document.getElementById('findings-list');
+      const countTotal = document.getElementById('count-total');
+      const countHigh = document.getElementById('count-high');
+      const countMedium = document.getElementById('count-medium');
+      const countLow = document.getElementById('count-low');
       const btn = document.getElementById('scan-btn');
 
       function setLoading(on){
         btn.disabled = on;
         input.disabled = on;
-        btn.textContent = on ? 'Scanning…' : 'Scan';
+        btn.textContent = on ? 'Scanning...' : 'Scan';
+        if (on) {
+          emptyState.textContent = 'Scanning...';
+          emptyState.style.display = 'block';
+        }
+      }
+
+      function clearResults(){
+        findingsList.innerHTML = '';
+        errorState.style.display = 'none';
+        errorState.textContent = '';
+      }
+
+      function setCounts(counts){
+        countTotal.textContent = counts.total;
+        countHigh.textContent = counts.high;
+        countMedium.textContent = counts.medium;
+        countLow.textContent = counts.low;
+      }
+
+      function makeBadge(severity){
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + severity;
+        badge.textContent = severity;
+        return badge;
+      }
+
+      function severityRank(severity){
+        if (severity === 'high') return 0;
+        if (severity === 'medium') return 1;
+        return 2;
+      }
+
+      function renderFindings(findings){
+        clearResults();
+        if(!findings || findings.length === 0){
+          emptyState.textContent = 'No findings. Your repo looks good!';
+          emptyState.style.display = 'block';
+          setCounts({ total: 0, high: 0, medium: 0, low: 0 });
+          return;
+        }
+        emptyState.style.display = 'none';
+        const counts = { total: findings.length, high: 0, medium: 0, low: 0 };
+
+        const ordered = findings.slice().sort((a, b) => {
+          return severityRank(a.severity) - severityRank(b.severity);
+        });
+
+        ordered.forEach((finding) => {
+          if (finding && finding.severity && counts[finding.severity] !== undefined) {
+            counts[finding.severity] += 1;
+          }
+          const item = document.createElement('li');
+          item.className = 'finding';
+
+          const header = document.createElement('div');
+          header.className = 'finding-header';
+
+          const rule = document.createElement('div');
+          rule.className = 'rule-id';
+          rule.textContent = finding.rule_id || 'UNKNOWN_RULE';
+
+          header.appendChild(rule);
+          header.appendChild(makeBadge(finding.severity || 'low'));
+
+          const msg = document.createElement('div');
+          msg.className = 'finding-message';
+          msg.textContent = finding.message || 'Potential issue detected';
+
+          const meta = document.createElement('div');
+          meta.className = 'finding-meta';
+          const parts = [];
+          if (finding.path) parts.push(finding.path);
+          if (finding.line) parts.push('line ' + finding.line);
+          meta.textContent = parts.join(' - ');
+
+          item.appendChild(header);
+          item.appendChild(msg);
+          if (meta.textContent) item.appendChild(meta);
+
+          if (finding.snippet) {
+            const snippet = document.createElement('div');
+            snippet.className = 'snippet';
+            snippet.textContent = finding.snippet;
+            item.appendChild(snippet);
+          }
+
+          findingsList.appendChild(item);
+        });
+
+        setCounts(counts);
       }
 
       form.addEventListener('submit', async function(e){
         e.preventDefault();
-        out.textContent = '';
+        clearResults();
         const url = input.value.trim();
         if(!url) return;
         setLoading(true);
@@ -66,12 +205,16 @@
           });
           const json = await res.json();
           if(!res.ok){
-            out.textContent = 'Error: ' + (json.detail || json.error || JSON.stringify(json));
+            errorState.textContent = 'Error: ' + (json.detail || json.error || JSON.stringify(json));
+            errorState.style.display = 'block';
+            emptyState.style.display = 'none';
           } else {
-            out.textContent = JSON.stringify(json, null, 2);
+            renderFindings(json.findings || []);
           }
         } catch(err){
-          out.textContent = 'Network error: ' + (err && err.message ? err.message : err);
+          errorState.textContent = 'Network error: ' + (err && err.message ? err.message : err);
+          errorState.style.display = 'block';
+          emptyState.style.display = 'none';
         } finally {
           setLoading(false);
         }
