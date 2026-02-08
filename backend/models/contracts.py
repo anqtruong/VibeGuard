@@ -4,6 +4,20 @@ from pydantic import BaseModel
 class GitHubScanRequest(BaseModel):
     """Request body from frontend containing the GitHub repo URL."""
     repo_url: str
+<<<<<<< HEAD
+=======
+class Finding(BaseModel): #This is the findings of the scanner. Which rule a potential vuln violated, severity, msg, optional location
+    rule_id: str
+    severity: Literal["low", "medium", "high"]
+    message: str
+    location: Optional[int] = None
+    path: Optional[str] = None
+    line: Optional[int] = None
+    snippet: Optional[str] = None
+
+class ScanResponse(BaseModel): #Return list of findings
+    findings: List[Finding]
+>>>>>>> 9d5f1c19b3a5739a25710045ce2cae42ba103519
 
 class InputRepository(BaseModel):
     """Repository identifier used across the pipeline.
@@ -18,6 +32,7 @@ class InputRepository(BaseModel):
     subpath: Optional[str] = None
 
 class SourceFile(BaseModel):
+<<<<<<< HEAD
     """A single source file collected by the ingestion step."""
     path: str      # repository path (relative to repo or subpath)
     content: str   # file text content
@@ -83,3 +98,7 @@ class ScanResponse(BaseModel):
     stats: Stats = Stats()
     findings: List[Finding] = []
     error: Optional[str] = None
+=======
+    path: str      # repository path (relative)
+    content: str   # full file content (text)
+>>>>>>> 9d5f1c19b3a5739a25710045ce2cae42ba103519

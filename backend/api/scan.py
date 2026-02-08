@@ -1,13 +1,41 @@
 #endpoint
 
 from fastapi import APIRouter, HTTPException
-from models.contracts import Finding, GitHubScanRequest, ScanResponse, InputRepository, Stats
+from models.contracts import GitHubScanRequest, ScanResponse, SourceFile
+from scanner.engine import scan_source_files
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-
-from scanner.ingest import ingest_repo, NotFoundError, DownloadTimeout, TooLargeError, IngestError
+from urllib.request import Request, urlopen
+import io
+import os
+import zipfile
 
 class InvalidGitHubRepoUrl(ValueError):
     pass
+
+class RepoFetchError(RuntimeError):
+    pass
+
+USER_AGENT = "vibeguard/0.1"
+MAX_ZIP_BYTES = 20 * 1024 * 1024
+MAX_FILE_BYTES = 1024 * 1024
+
+IGNORED_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".next",
+    "node_modules",
+    "dist",
+    "build",
+    "target",
+    "coverage",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".idea",
+    ".vscode",
+}
 
 scan_router = APIRouter()
 
@@ -15,30 +43,22 @@ scan_router = APIRouter()
 async def scan_GitHub(request: GitHubScanRequest):
     # validate and parse repo URL into structured InputRepository
     try:
-        repo_meta = normalize_Url(request.repo_url)
+        normalized_url = normalize_Url(repo_url)
     except InvalidGitHubRepoUrl as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # call ingestion to fetch files (anonymous download)
     try:
-        payload, stats = await ingest_repo(repo_meta.owner, repo_meta.name, ref=repo_meta.ref, subpath=repo_meta.subpath, timeout=30)
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except DownloadTimeout as e:
-        raise HTTPException(status_code=504, detail=str(e))
-    except TooLargeError as e:
-        raise HTTPException(status_code=413, detail=str(e))
-    except IngestError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+        files = fetch_github_files(normalized_url)
+    except RepoFetchError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to fetch repository")
 
-    # return minimal ScanResponse with empty findings (scanner stub)
-    return ScanResponse(ok=True, repo=repo_meta, stats=stats, findings=[])
+    findings = scan_source_files(files)
+    return { "findings": findings}
 
-# minimal URL normalizer that returns structured InputRepository
-def normalize_Url(repo_url: str) -> InputRepository:
-    # basic validation
+def normalize_Url(repo_url: str) -> str:
+    
     if not repo_url or not repo_url.strip():
         raise InvalidGitHubRepoUrl("Empty URL")
 
@@ -83,4 +103,90 @@ def normalize_Url(repo_url: str) -> InputRepository:
         else:
             raise InvalidGitHubRepoUrl("URL must be a GitHub repository root or tree URL")
 
-    return InputRepository(owner=owner, name=name, ref=ref, subpath=subpath)
+    return f"https://github.com/{owner}/{repo}"
+
+def fetch_github_files(repo_url: str) -> list[SourceFile]:
+    owner, repo = parse_owner_repo(repo_url)
+    zip_bytes = download_repo_zip(owner, repo)
+    return extract_text_files(zip_bytes)
+
+def parse_owner_repo(repo_url: str) -> tuple[str, str]:
+    parsed = urlparse(repo_url)
+    path = parsed.path.strip("/")
+    parts = path.split("/")
+    if len(parts) != 2:
+        raise RepoFetchError("Invalid GitHub repo URL format")
+    return parts[0], parts[1]
+
+def download_repo_zip(owner: str, repo: str) -> bytes:
+    branches = ("main", "master")
+    last_error: str | None = None
+
+    for branch in branches:
+        url = f"https://codeload.github.com/{owner}/{repo}/zip/refs/heads/{branch}"
+        req = Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urlopen(req, timeout=30) as resp:
+                length = resp.headers.get("Content-Length")
+                if length and int(length) > MAX_ZIP_BYTES:
+                    raise RepoFetchError("Repository zip is too large to scan")
+                data = resp.read(MAX_ZIP_BYTES + 1)
+                if len(data) > MAX_ZIP_BYTES:
+                    raise RepoFetchError("Repository zip is too large to scan")
+                return data
+        except HTTPError as e:
+            if e.code == 404:
+                last_error = f"Repository or branch not found (tried {branch})"
+                continue
+            if e.code == 403:
+                raise RepoFetchError("GitHub blocked the request or rate limit exceeded")
+            raise RepoFetchError(f"GitHub download failed with status {e.code}")
+        except URLError:
+            raise RepoFetchError("Could not reach GitHub")
+
+    raise RepoFetchError(last_error or "Unable to download repository")
+
+def extract_text_files(zip_bytes: bytes) -> list[SourceFile]:
+    files: list[SourceFile] = []
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            rel_path = normalize_zip_path(info.filename)
+            if not rel_path:
+                continue
+            if should_skip_path(rel_path):
+                continue
+            if info.file_size > MAX_FILE_BYTES:
+                continue
+            with zf.open(info) as f:
+                data = f.read()
+            if looks_binary(data):
+                continue
+            text = data.decode("utf-8", errors="ignore")
+            files.append(SourceFile(path=rel_path, content=text))
+
+    return files
+
+def normalize_zip_path(path: str) -> str:
+    if "/" in path:
+        _, rest = path.split("/", 1)
+        return rest
+    return path
+
+def should_skip_path(path: str) -> bool:
+    parts = [p for p in path.split("/") if p]
+    for part in parts:
+        if part in IGNORED_DIRS:
+            return True
+    return False
+
+def looks_binary(data: bytes) -> bool:
+    if not data:
+        return False
+    if b"\x00" in data:
+        return True
+    text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(32, 127)))
+    nontext = sum(1 for b in data if b not in text_chars)
+    return nontext / len(data) > 0.3
