@@ -97,6 +97,7 @@ This project uses Next.js for the frontend, and FastAPI for the backend.
 ```bash
 cd frontend
 npm install
+cd vibeguard
 npm run dev
 ```
 
