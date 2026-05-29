@@ -5,7 +5,6 @@
 - path: string (optional)
 - line: number (optional)
 - snippet: string (optional)
-- location: number (optional)
 
 ## GitHubScanRequest
 {
@@ -13,6 +12,6 @@
 }
 
 ## Notes
-- Fields are frozen for MVP
+- This contract is a guideline for a solo project; amendments are allowed when discussed
 - New optional fields may be added
-- Fields may not be renamed or removed
+- Removed: location (was redundant with line)

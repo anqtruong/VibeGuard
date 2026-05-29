@@ -181,7 +181,6 @@ def scan_text(path: str, text: str, rules: Optional[Tuple[Rule, ...]] = None) ->
                         rule_id=rule.id,
                         severity=rule.severity,
                         message=rule.message,
-                        location=line_no,
                         path=path,
                         line=line_no,
                         snippet=snippet,
