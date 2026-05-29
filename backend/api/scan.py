@@ -1,5 +1,3 @@
-#endpoint
-
 from fastapi import APIRouter, HTTPException
 from models.contracts import GitHubScanRequest, ScanResponse, SourceFile
 from scanner.engine import scan_source_files
@@ -38,7 +36,8 @@ IGNORED_DIRS = {
 
 scan_router = APIRouter()
 @scan_router.post("/github", response_model=ScanResponse)
-def scan_GitHub(request: GitHubScanRequest):
+def scan_github(request: GitHubScanRequest):
+    """Accept a GitHub repo URL, scan it for vulnerabilities, and return all findings."""
 
     try:
         owner, repo = parse_github_url(request.repo_url)
