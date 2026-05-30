@@ -1,5 +1,3 @@
-#endpoint
-
 from fastapi import APIRouter, HTTPException
 from models.contracts import GitHubScanRequest, ScanResponse, SourceFile
 from scanner.engine import scan_source_files
@@ -7,7 +5,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 import io
-import os
 import zipfile
 
 class InvalidGitHubRepoUrl(ValueError):
@@ -39,17 +36,16 @@ IGNORED_DIRS = {
 
 scan_router = APIRouter()
 @scan_router.post("/github", response_model=ScanResponse)
-def scan_GitHub(request: GitHubScanRequest):
-
-    repo_url = request.repo_url
+def scan_github(request: GitHubScanRequest):
+    """Accept a GitHub repo URL, scan it for vulnerabilities, and return all findings."""
 
     try:
-        normalized_url = normalize_Url(repo_url)
+        owner, repo = parse_github_url(request.repo_url)
     except InvalidGitHubRepoUrl as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        files = fetch_github_files(normalized_url)
+        files = fetch_github_files(owner, repo)
     except RepoFetchError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception:
@@ -58,30 +54,28 @@ def scan_GitHub(request: GitHubScanRequest):
     findings = scan_source_files(files)
     return { "findings": findings}
 
-def normalize_Url(repo_url: str) -> str:
-    
+def parse_github_url(repo_url: str) -> tuple[str, str]:
+    """Validate a GitHub repo URL and return the (owner, repo) pair."""
     if not repo_url or not repo_url.strip():
         raise InvalidGitHubRepoUrl("Empty URL")
 
     url = repo_url.strip()
-
-    if not url.startswith(("https://")): #if url doesn't start with https://, add it
+    if not url.startswith("https://"):
         url = "https://" + url
 
     parsed = urlparse(url)
 
-    if parsed.netloc != "github.com":#github repo input only
+    if parsed.netloc != "github.com":
         raise InvalidGitHubRepoUrl("Only github.com repo URLs are supported")
 
-    if parsed.query or parsed.fragment: # Reject query strings or fragments
+    if parsed.query or parsed.fragment:
         raise InvalidGitHubRepoUrl("Invalid GitHub repo URL")
 
-    path = parsed.path.rstrip("/") #Normalize path
+    path = parsed.path.rstrip("/")
     if path.endswith(".git"):
         path = path[:-4]
     parts = path.lstrip("/").split("/")
 
-    # Must be exactly /owner/repo
     if len(parts) != 2:
         raise InvalidGitHubRepoUrl("URL must be a GitHub repository root (https://github.com/owner/repo)")
     owner, repo = parts
@@ -89,20 +83,12 @@ def normalize_Url(repo_url: str) -> str:
     if not owner or not repo:
         raise InvalidGitHubRepoUrl("Invalid GitHub repo URL")
 
-    return f"https://github.com/{owner}/{repo}"
+    return owner, repo
 
-def fetch_github_files(repo_url: str) -> list[SourceFile]:
-    owner, repo = parse_owner_repo(repo_url)
+def fetch_github_files(owner: str, repo: str) -> list[SourceFile]:
+    """Download and extract text files from a GitHub repository zip archive."""
     zip_bytes = download_repo_zip(owner, repo)
     return extract_text_files(zip_bytes)
-
-def parse_owner_repo(repo_url: str) -> tuple[str, str]:
-    parsed = urlparse(repo_url)
-    path = parsed.path.strip("/")
-    parts = path.split("/")
-    if len(parts) != 2:
-        raise RepoFetchError("Invalid GitHub repo URL format")
-    return parts[0], parts[1]
 
 def download_repo_zip(owner: str, repo: str) -> bytes:
     branches = ("main", "master")

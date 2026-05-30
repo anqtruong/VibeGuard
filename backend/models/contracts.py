@@ -3,11 +3,11 @@ from pydantic import BaseModel
 
 class GitHubScanRequest(BaseModel): #This is where our input repo url is stored
     repo_url: str
-class Finding(BaseModel): #This is the findings of the scanner. Which rule a potential vuln violated, severity, msg, optional location
+class Finding(BaseModel):
+    """Represents a single vulnerability finding from the scanner."""
     rule_id: str
     severity: Literal["low", "medium", "high"]
     message: str
-    location: Optional[int] = None
     path: Optional[str] = None
     line: Optional[int] = None
     snippet: Optional[str] = None

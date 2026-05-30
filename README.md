@@ -50,7 +50,40 @@ See the vulnerability, what type it is, the severity, and where it is! Learn exa
 
 ---
 
-## How We Built It
+## Architecture
+
+A request flows through four layers:
+
+```
+POST /scan/github
+      |
+      v
+api/scan.py          -- validates the GitHub URL, downloads the repo zip from
+                        codeload.github.com, extracts text files into SourceFile objects
+      |
+      v
+scanner/engine.py    -- iterates SourceFile objects, applies size guardrails,
+                        delegates each file to scan_text
+      |
+      v
+scanner/rules.py     -- runs each active Rule's regex against every line,
+                        emits a Finding on a match
+      |
+      v
+ScanResponse         -- list of Finding objects returned as JSON
+```
+
+Key data models (`backend/models/contracts.py`):
+- `GitHubScanRequest` — input: `{ repo_url: string }`
+- `SourceFile` — internal: file path + decoded text content
+- `Finding` — output: `rule_id`, `severity`, `message`, `path`, `line`, `snippet`
+- `ScanResponse` — output: `{ findings: Finding[] }`
+
+Nothing is stored. The zip is processed in memory and discarded.
+
+---
+
+**How We Built It**
 
 ### Frontend
 
