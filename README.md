@@ -98,22 +98,6 @@ Nothing is stored. The zip is processed in memory and discarded.
 
 ---
 
-## Challenges We Ran Into
-
-- It was our first time using FastAPI and Nodejs, and for some of us, Git  
-- It was hard to figure out how to download the zip archive properly  
-- Setting up development environments and resolving merge conflicts was challenging at times  
-
----
-
-## What We Learned
-
-- How to build and structure an API using FastAPI  
-- How to create a full-stack application with Next.js  
-- How to collaborate effectively using Git and GitHub  
-
----
-
 ## Dependencies
 
 This project uses Next.js for the frontend, and FastAPI for the backend.
